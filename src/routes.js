@@ -2,8 +2,8 @@ import { lazy } from "react";
 
 /** Every screen in the app, in the order of the design canvas. `file` is the design artboard it implements. */
 export const screens = [
-  { name: "Main", path: "/", title: "Building map", file: "Main.dc.html", Component: lazy(() => import("./screens/Main.jsx")) },
-  { name: "Home", path: "/home", title: "Home", file: "Home.dc.html", Component: lazy(() => import("./screens/Home.jsx")) },
+  { name: "Main", path: "/map", title: "Building map", file: "Main.dc.html", Component: lazy(() => import("./screens/Main.jsx")) },
+  { name: "Home", path: "/", title: "Home", file: "Home.dc.html", Component: lazy(() => import("./screens/Home.jsx")) },
   { name: "Diary", path: "/diary", title: "Diary", file: "Diary.dc.html", Component: lazy(() => import("./screens/Diary.jsx")) },
   { name: "Social", path: "/social", title: "Social", file: "Social.dc.html", Component: lazy(() => import("./screens/Social.jsx")) },
   { name: "Money", path: "/money", title: "Money", file: "Money.dc.html", Component: lazy(() => import("./screens/Money.jsx")) },
