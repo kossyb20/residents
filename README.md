@@ -10,8 +10,8 @@ npm install
 npm run dev
 ```
 
-`npm run build` makes a production bundle in `dist/`. On wide screens each screen sits in a
-390×844 phone frame; on a phone it fills the viewport.
+`npm run build` makes a production bundle in `dist/`. Every screen is laid out at the design's fixed
+390×844 and scaled as a whole to fit the window: inside a phone frame on wide screens, edge-to-edge on phones.
 
 ## How it's put together
 
@@ -26,7 +26,7 @@ npm run dev
   string into a React style object (used where a style depends on state).
 - `src/components/ScreenLink.jsx` — links between screens. Pass the design's screen file name
   (`href="Court.dc.html"`) and it routes in-app.
-- `src/components/PhoneFrame.jsx` — the device frame around each screen.
+- `src/components/PhoneFrame.jsx` — renders a screen at 390×844 and scales it to fit the window.
 - `src/styles/global.css` — design tokens (ink, paper, card, fonts), scroll-area and ticker styles.
 - `src/lib/theme.js` — the accent colour (`#E8B53A`) and its alternates from the design.
 

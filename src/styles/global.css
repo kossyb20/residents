@@ -14,30 +14,32 @@ body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(
 a { color: var(--ink); }
 a:hover { color: #000; }
 
-/* Device frame: a 390×844 phone on wide screens, edge-to-edge on phones. */
+/* Device frame: the screen is always 390×844 and scaled to fit (see PhoneFrame.jsx). */
 .phone-stage {
-  min-height: 100%;
+  position: fixed;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 16px;
-  box-sizing: border-box;
+  overflow: hidden;
   background: #e9e1d3;
 }
+.phone-stage--bleed { background: var(--paper); }
+.phone-slot { flex: none; position: relative; }
 .phone-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 390px;
   height: 844px;
+  transform-origin: 0 0;
   border-radius: 28px;
   overflow: hidden;
   border: 3px solid var(--ink);
   box-shadow: 6px 8px 0 var(--ink);
   background: var(--paper);
-  flex: none;
 }
-@media (max-width: 480px), (max-height: 700px) and (max-width: 900px) {
-  .phone-stage { padding: 0; background: var(--paper); }
-  .phone-frame { width: 100vw; height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }
-}
+.phone-frame--bleed { border: 0; border-radius: 0; box-shadow: none; }
 .screen { position: relative; }
 
 /* Scroll areas scroll without visible scrollbars. */
