@@ -1,0 +1,1266 @@
+// Go 9×9
+import { Screen, css } from '../lib/screen.js';
+import ScreenLink from '../components/ScreenLink.jsx';
+
+export default class Go extends Screen {
+  static title = 'Go';
+
+  renderVals() {
+    const accent = this.props.accent ?? '#E8B53A';
+    const role = this.state.role ?? 'player';
+    const isWatcher = role === 'watcher';
+    const mtab = (on) =>
+      'all: unset; flex: 1; box-sizing: border-box; border-radius: 999px; display: flex; align-items: center; justify-content: center; gap: 6px; font-family: Fredoka, sans-serif; font-size: 14px; font-weight: 600; cursor: pointer;' +
+      (on ? ' background: ' + accent + '; border: 2px solid #2A2522;' : ' border: 2px solid transparent;');
+    const bar = (active) =>
+      'margin: 0 20px; height: 36px; flex: none; box-sizing: border-box; border: 2.5px solid #2A2522; border-radius: 12px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: ' +
+      (active ? accent : '#FFFDF8') +
+      ';';
+    const extraC = this.state.extraC ?? [];
+    const votes = this.state.votes ?? {};
+    const baseC = [
+      {
+        id: 'c0',
+        name: 'Kemi',
+        tone: '#A8714A',
+        text: 'That white group is short of breath',
+        up: 2,
+        down: 0,
+      },
+      { id: 'c1', name: 'Musa', tone: '#8B5A3C', text: "I still don't get this game", up: 7, down: 0 },
+    ];
+    const comments = baseC
+      .concat(extraC)
+      .slice(-2)
+      .map((m) => {
+        const v = votes[m.id];
+        const vs = (on) =>
+          'all: unset; cursor: pointer; padding: 0 4px; border-radius: 6px;' +
+          (on ? ' background: ' + accent + ';' : '');
+        return {
+          name: m.name,
+          text: m.text,
+          up: String(m.up + (v === 'up' ? 1 : 0)),
+          down: String(m.down + (v === 'down' ? 1 : 0)),
+          face:
+            'width: 22px; height: 22px; flex: none; box-sizing: border-box; border-radius: 50%; border: 2px solid #2A2522; background: ' +
+            m.tone +
+            '; margin-top: 1px;',
+          upStyle: vs(v === 'up'),
+          downStyle: vs(v === 'down'),
+          voteUp: () => this.setState({ votes: { ...votes, [m.id]: v === 'up' ? null : 'up' } }),
+          voteDown: () => this.setState({ votes: { ...votes, [m.id]: v === 'down' ? null : 'down' } }),
+        };
+      });
+    const draft = this.state.draft ?? '';
+
+    // ---- game ----
+
+    const flags = (moved) => ({ waiting: !moved, byYou: moved === 'you', byHer: moved === 'her' });
+
+    const start = [
+      '.........',
+      '.........',
+      '..W.B....',
+      '...WB.W..',
+      '..WB.B...',
+      '...W.B...',
+      '....W....',
+      '.........',
+      '.........',
+    ];
+    const b = this.state.b ?? start.map((r) => r.split(''));
+    const moved = this.state.moved ?? null;
+    const last = this.state.last ?? [6, 4];
+    const capsMine = this.state.capsMine ?? 1,
+      capsTheirs = this.state.capsTheirs ?? 0;
+    const nb = (r, c) =>
+      [
+        [r - 1, c],
+        [r + 1, c],
+        [r, c - 1],
+        [r, c + 1],
+      ].filter(([y, x]) => y >= 0 && y < 9 && x >= 0 && x < 9);
+    const group = (g, r, c) => {
+      const col = g[r][c],
+        seen = new Set([r * 9 + c]),
+        st = [[r, c]],
+        libs = new Set();
+      while (st.length) {
+        const [y, x] = st.pop();
+        nb(y, x).forEach(([yy, xx]) => {
+          const v = g[yy][xx];
+          if (v === '.') libs.add(yy * 9 + xx);
+          else if (v === col && !seen.has(yy * 9 + xx)) {
+            seen.add(yy * 9 + xx);
+            st.push([yy, xx]);
+          }
+        });
+      }
+      return { stones: [...seen], libs: libs.size };
+    };
+    const tryPlace = (r, c) => {
+      if (b[r][c] !== '.') return null;
+      const n = b.map((x) => x.slice());
+      n[r][c] = 'B';
+      let taken = 0;
+      nb(r, c).forEach(([y, x]) => {
+        if (n[y][x] === 'W') {
+          const gr = group(n, y, x);
+          if (!gr.libs) {
+            gr.stones.forEach((i) => {
+              n[Math.floor(i / 9)][i % 9] = '.';
+            });
+            taken += gr.stones.length;
+          }
+        }
+      });
+      if (!group(n, r, c).libs) return null;
+      return { n, taken, libs: group(n, r, c).libs };
+    };
+    const canAct = !isWatcher && !moved;
+    const place = (r, c, who) => {
+      const t = tryPlace(r, c);
+      if (t) this.setState({ b: t.n, moved: who, last: [r, c], capsMine: capsMine + t.taken, took: t.taken });
+    };
+    const points = [];
+    for (let r = 0; r < 9; r++)
+      for (let c = 0; c < 9; c++) {
+        const v = b[r][c],
+          cx = 18 + c * 37.5,
+          cy = 18 + r * 37.5,
+          isLast = last[0] === r && last[1] === c;
+        const ok = canAct && v === '.';
+        points.push({
+          label: 'ABCDEFGHJ'[c] + (9 - r) + (v === 'B' ? ', your stone' : v === 'W' ? ', their stone' : ''),
+          s:
+            'all: unset; position: absolute; left: ' +
+            (cx - 16) +
+            'px; top: ' +
+            (cy - 16) +
+            'px; width: 32px; height: 32px; box-sizing: border-box; border-radius: 50%; display: flex; align-items: center; justify-content: center;' +
+            (v === '.'
+              ? ''
+              : ' border: 2.5px solid #2A2522; background: ' +
+                (v === 'B' ? '#2A2522' : '#FFFDF8') +
+                '; box-shadow: 0 3px 0 rgba(0,0,0,.25);') +
+            (ok ? ' cursor: pointer;' : ''),
+          ring:
+            isLast && v !== '.'
+              ? 'width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid ' +
+                (v === 'B' ? '#F2CE6E' : '#C8553D') +
+                ';'
+              : 'display: none;',
+          go: () => {
+            if (ok) place(r, c, 'you');
+          },
+        });
+      }
+    const choose = () => {
+      let best = null,
+        bs = -1e9;
+      for (let r = 0; r < 9; r++)
+        for (let c = 0; c < 9; c++) {
+          const t = tryPlace(r, c);
+          if (!t) continue;
+          const s =
+            t.taken * 20 +
+            t.libs * 2 -
+            Math.abs(r - 4) -
+            Math.abs(c - 4) +
+            (nb(r, c).some(([y, x]) => b[y][x] === 'W') ? 3 : 0);
+          if (s > bs) {
+            bs = s;
+            best = [r, c];
+          }
+        }
+      return best;
+    };
+    const took = this.state.took ?? 0;
+    const R = {
+      ...flags(moved),
+      points,
+      topActive: !!moved,
+      topInfo: capsTheirs + ' captured',
+      botInfo: capsMine + ' captured',
+      status:
+        moved === 'pass'
+          ? 'You passed'
+          : moved
+            ? (moved === 'you' ? 'Placed' : 'She placed') +
+              (took ? ' · captured ' + took : '') +
+              ' · Ifeoma to play'
+            : 'Your move · tap a point',
+      watchStatus: moved ? 'Watching · Ifeoma to move' : 'Watching · Amara to move',
+      byYou: moved === 'you' || moved === 'pass',
+      showExtra: !moved && !isWatcher,
+      extraLabel: 'Pass',
+      extraGo: () => this.setState({ moved: 'pass' }),
+      handOff: () => {
+        const m = choose();
+        if (m) place(m[0], m[1], 'her');
+      },
+    };
+
+    // ---- end game ----
+
+    return {
+      accent,
+      comments,
+      draft,
+      isWatcher,
+      isPlayer: !isWatcher,
+      playerTab: mtab(!isWatcher),
+      watcherTab: mtab(isWatcher),
+      asPlayer: () => this.setState({ role: 'player', sel: null }),
+      asWatcher: () => this.setState({ role: 'watcher', sel: null }),
+      watchCount: String(3 + (isWatcher ? 1 : 0)),
+      topBar: bar(!!R.topActive),
+      botBar: bar(!R.topActive),
+      showExtra: false,
+      extraLabel: '',
+      extraGo: () => {},
+      typing: (e) => this.setState({ draft: e.target.value }),
+      send: () => {
+        if (draft.trim())
+          this.setState({
+            extraC: extraC.concat([
+              {
+                id: 'x' + extraC.length,
+                name: isWatcher ? 'You' : 'Amara',
+                tone: '#7A4A2E',
+                text: draft.trim(),
+                up: 0,
+                down: 0,
+              },
+            ]),
+            draft: '',
+          });
+      },
+      ...R,
+    };
+  }
+
+  render() {
+    const vals = this.renderVals();
+    return (
+      <div
+        className="screen"
+        style={{
+          width: '100%',
+          height: '100%',
+          boxSizing: 'border-box',
+          background: '#F5EFE5',
+          color: '#2A2522',
+          fontFamily: "'Nunito', system-ui, sans-serif",
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <header style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 20px 8px' }}>
+          <ScreenLink
+            href="Play.dc.html"
+            aria-label="Back to Play"
+            style={{
+              width: '46px',
+              height: '46px',
+              flex: 'none',
+              boxSizing: 'border-box',
+              border: '3px solid #2A2522',
+              borderRadius: '14px',
+              background: vals.accent,
+              boxShadow: '3px 4px 0 #2A2522',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <svg
+              width="26"
+              height="26"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#2A2522"
+              strokeWidth="3.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M15 5l-7 7 7 7" />
+            </svg>
+          </ScreenLink>
+
+          <div style={{ flex: '1', minWidth: '0', display: 'flex', flexDirection: 'column' }}>
+            <h1
+              style={{
+                margin: '0',
+                fontFamily: "'Fredoka', sans-serif",
+                fontSize: '25px',
+                fontWeight: '700',
+                lineHeight: '1.1',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              Go vs Ifeoma
+            </h1>
+
+            <span style={{ fontSize: '14px', fontWeight: '700', color: '#5E564D' }}>
+              One move a day · 9×9 · move 14
+            </span>
+          </div>
+
+          <span
+            role="img"
+            aria-label={`${vals.watchCount} residents watching`}
+            style={{
+              height: '34px',
+              flex: 'none',
+              boxSizing: 'border-box',
+              border: '2.5px solid #2A2522',
+              borderRadius: '999px',
+              background: '#FFFDF8',
+              boxShadow: '2px 3px 0 #2A2522',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '0 10px 0 7px',
+              fontFamily: "'Fredoka', sans-serif",
+              fontSize: '15px',
+              fontWeight: '700',
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M2 12 C5 6 9 4 12 4 C15 4 19 6 22 12 C19 18 15 20 12 20 C9 20 5 18 2 12 Z"
+                fill="#FFFDF8"
+                stroke="#2A2522"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="12" r="4" fill="#2F3E5C" stroke="#2A2522" strokeWidth="2" />
+            </svg>
+            {vals.watchCount}
+          </span>
+        </header>
+
+        {/* LED ticker: the place's news mixed with labelled sponsors */}
+
+        <div
+          role="marquee"
+          aria-label="KEMI v TUNDE chess · move 31, KORA LABS (sponsor), LUDO NIGHT Sat 8 pm · 412 of 512, SABI FOODS (sponsor), LIONS v ROVERS tonight 8 pm, NDURA MINING (sponsor)"
+          style={{
+            margin: '0 20px 8px',
+            height: '34px',
+            flex: 'none',
+            boxSizing: 'border-box',
+            border: '3px solid #2A2522',
+            borderRadius: '12px',
+            background: '#2A2522',
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <div
+            className="rs-led"
+            aria-hidden="true"
+            style={{ display: 'flex', width: 'max-content', animationDuration: '33s' }}
+          >
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#FFFDF8',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                KEMI v TUNDE
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>chess · move 31</span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#9DB8E0',
+                textShadow: '0 0 8px #9DB8E099',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                KORA LABS
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>Chess blitz</span>
+              <span
+                style={{
+                  border: '1px solid #9DB8E0',
+                  borderRadius: '3px',
+                  padding: '0 3px',
+                  fontSize: '8.5px',
+                  fontWeight: '800',
+                  letterSpacing: '.05em',
+                  textShadow: 'none',
+                  opacity: '.85',
+                }}
+              >
+                SPONSOR
+              </span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#FFFDF8',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                LUDO NIGHT
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>
+                Sat 8 pm · 412 of 512
+              </span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#E06A4E',
+                textShadow: '0 0 8px #E06A4E99',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                SABI FOODS
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>Ludo Night</span>
+              <span
+                style={{
+                  border: '1px solid #E06A4E',
+                  borderRadius: '3px',
+                  padding: '0 3px',
+                  fontSize: '8.5px',
+                  fontWeight: '800',
+                  letterSpacing: '.05em',
+                  textShadow: 'none',
+                  opacity: '.85',
+                }}
+              >
+                SPONSOR
+              </span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#FFFDF8',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                LIONS v ROVERS
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>tonight 8 pm</span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#8FC1A9',
+                textShadow: '0 0 8px #8FC1A999',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                NDURA MINING
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>Draughts cup</span>
+              <span
+                style={{
+                  border: '1px solid #8FC1A9',
+                  borderRadius: '3px',
+                  padding: '0 3px',
+                  fontSize: '8.5px',
+                  fontWeight: '800',
+                  letterSpacing: '.05em',
+                  textShadow: 'none',
+                  opacity: '.85',
+                }}
+              >
+                SPONSOR
+              </span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#FFFDF8',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                KEMI v TUNDE
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>chess · move 31</span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#9DB8E0',
+                textShadow: '0 0 8px #9DB8E099',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                KORA LABS
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>Chess blitz</span>
+              <span
+                style={{
+                  border: '1px solid #9DB8E0',
+                  borderRadius: '3px',
+                  padding: '0 3px',
+                  fontSize: '8.5px',
+                  fontWeight: '800',
+                  letterSpacing: '.05em',
+                  textShadow: 'none',
+                  opacity: '.85',
+                }}
+              >
+                SPONSOR
+              </span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#FFFDF8',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                LUDO NIGHT
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>
+                Sat 8 pm · 412 of 512
+              </span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#E06A4E',
+                textShadow: '0 0 8px #E06A4E99',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                SABI FOODS
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>Ludo Night</span>
+              <span
+                style={{
+                  border: '1px solid #E06A4E',
+                  borderRadius: '3px',
+                  padding: '0 3px',
+                  fontSize: '8.5px',
+                  fontWeight: '800',
+                  letterSpacing: '.05em',
+                  textShadow: 'none',
+                  opacity: '.85',
+                }}
+              >
+                SPONSOR
+              </span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#FFFDF8',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                LIONS v ROVERS
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>tonight 8 pm</span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+            <span
+              style={{
+                flex: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                padding: '0 12px',
+                whiteSpace: 'nowrap',
+                color: '#8FC1A9',
+                textShadow: '0 0 8px #8FC1A999',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '14.5px',
+                  fontWeight: '700',
+                  letterSpacing: '.08em',
+                }}
+              >
+                NDURA MINING
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: '800', opacity: '.85' }}>Draughts cup</span>
+              <span
+                style={{
+                  border: '1px solid #8FC1A9',
+                  borderRadius: '3px',
+                  padding: '0 3px',
+                  fontSize: '8.5px',
+                  fontWeight: '800',
+                  letterSpacing: '.05em',
+                  textShadow: 'none',
+                  opacity: '.85',
+                }}
+              >
+                SPONSOR
+              </span>
+              <span style={{ color: '#5E564D', fontSize: '12px', textShadow: 'none' }}>★</span>
+            </span>
+          </div>
+        </div>
+
+        <div
+          role="tablist"
+          aria-label="Mode"
+          style={{
+            margin: '0 20px 8px',
+            height: '40px',
+            flex: 'none',
+            boxSizing: 'border-box',
+            border: '2.5px solid #2A2522',
+            borderRadius: '999px',
+            background: '#FFFDF8',
+            display: 'flex',
+            padding: '3px',
+            gap: '3px',
+          }}
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={vals.isPlayer}
+            onClick={vals.asPlayer}
+            style={css(vals.playerTab)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M4 20 l3 -1 l12 -12 a2 2 0 0 0 -3 -3 l-12 12 z"
+                fill="#FFFDF8"
+                stroke="#2A2522"
+                strokeWidth="2.4"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Playing
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={vals.isWatcher}
+            onClick={vals.asWatcher}
+            style={css(vals.watcherTab)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M2 12 C5 6 9 4 12 4 C15 4 19 6 22 12 C19 18 15 20 12 20 C9 20 5 18 2 12 Z"
+                fill="#FFFDF8"
+                stroke="#2A2522"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="12" r="4" fill="#2F3E5C" stroke="#2A2522" strokeWidth="2" />
+            </svg>
+            Watching
+          </button>
+        </div>
+
+        <div style={css(vals.topBar)}>
+          <span
+            style={{
+              width: '22px',
+              height: '22px',
+              flex: 'none',
+              boxSizing: 'border-box',
+              border: '2px solid #2A2522',
+              borderRadius: '50%',
+              background: '#A8714A',
+            }}
+          />
+
+          <span
+            style={{ flex: '1', fontFamily: "'Fredoka', sans-serif", fontSize: '15px', fontWeight: '600' }}
+          >
+            Ifeoma <span style={{ fontSize: '12.5px', color: '#8A8075' }}>880</span>
+          </span>
+
+          <span style={{ fontSize: '12.5px', fontWeight: '800' }}>{vals.topInfo}</span>
+        </div>
+
+        <section
+          aria-label="Go board"
+          style={{
+            margin: '6px auto',
+            position: 'relative',
+            width: '336px',
+            height: '336px',
+            flex: 'none',
+            border: '3px solid #2A2522',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '4px 5px 0 #2A2522',
+            background: '#E5B776',
+          }}
+        >
+          <svg
+            width="336"
+            height="336"
+            viewBox="0 0 336 336"
+            aria-hidden="true"
+            style={{ position: 'absolute', inset: '0' }}
+          >
+            <g stroke="#2A2522" strokeWidth="1.6">
+              <path d="M18 18.0 H318 M18.0 18 V318" />
+              <path d="M18 55.5 H318 M55.5 18 V318" />
+              <path d="M18 93.0 H318 M93.0 18 V318" />
+              <path d="M18 130.5 H318 M130.5 18 V318" />
+              <path d="M18 168.0 H318 M168.0 18 V318" />
+              <path d="M18 205.5 H318 M205.5 18 V318" />
+              <path d="M18 243.0 H318 M243.0 18 V318" />
+              <path d="M18 280.5 H318 M280.5 18 V318" />
+              <path d="M18 318.0 H318 M318.0 18 V318" />
+            </g>
+            <circle cx="93.0" cy="93.0" r="3.5" fill="#2A2522" />
+            <circle cx="243.0" cy="93.0" r="3.5" fill="#2A2522" />
+            <circle cx="168.0" cy="168.0" r="3.5" fill="#2A2522" />
+            <circle cx="93.0" cy="243.0" r="3.5" fill="#2A2522" />
+            <circle cx="243.0" cy="243.0" r="3.5" fill="#2A2522" />
+          </svg>{' '}
+          {vals.points.map((q, $index) => (
+            <button key={$index} type="button" aria-label={q.label} onClick={q.go} style={css(q.s)}>
+              <span style={css(q.ring)} />
+            </button>
+          ))}
+        </section>
+
+        <div style={css(vals.botBar)}>
+          <span
+            style={{
+              width: '22px',
+              height: '22px',
+              flex: 'none',
+              boxSizing: 'border-box',
+              border: '2px solid #2A2522',
+              borderRadius: '50%',
+              background: '#7A4A2E',
+            }}
+          />
+
+          <span
+            style={{ flex: '1', fontFamily: "'Fredoka', sans-serif", fontSize: '15px', fontWeight: '600' }}
+          >
+            Amara <span style={{ fontSize: '12.5px', color: '#8A8075' }}>820</span>
+          </span>
+
+          <span style={{ fontSize: '12.5px', fontWeight: '800' }}>{vals.botInfo}</span>
+        </div>
+
+        {/* Comments */}
+
+        <section
+          aria-label="Comments from watchers"
+          style={{
+            margin: '10px 20px 10px',
+            flex: '1',
+            minHeight: '0',
+            border: '3px solid #2A2522',
+            borderRadius: '20px',
+            background: '#FFFDF8',
+            boxShadow: '4px 5px 0 #2A2522',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              flex: '1',
+              minHeight: '0',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-end',
+              gap: '6px',
+              padding: '8px 10px 4px',
+            }}
+          >
+            {vals.comments.map((m, $index) => (
+              <div key={$index} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px' }}>
+                <span aria-hidden="true" style={css(m.face)} />
+
+                <span
+                  style={{
+                    flex: '1',
+                    minWidth: '0',
+                    fontSize: '13.5px',
+                    fontWeight: '600',
+                    lineHeight: '1.25',
+                  }}
+                >
+                  <b style={{ fontFamily: "'Fredoka', sans-serif", fontWeight: '600' }}>{m.name}</b> {m.text}
+                </span>
+
+                <span
+                  aria-label={`${m.up} up, ${m.down} down`}
+                  style={{
+                    flex: 'none',
+                    display: 'flex',
+                    gap: '5px',
+                    fontSize: '11.5px',
+                    fontWeight: '800',
+                    color: '#5E564D',
+                  }}
+                >
+                  <button type="button" aria-label="Vote up" onClick={m.voteUp} style={css(m.upStyle)}>
+                    ▲<span>{m.up}</span>
+                  </button>
+
+                  <button type="button" aria-label="Vote down" onClick={m.voteDown} style={css(m.downStyle)}>
+                    ▼<span>{m.down}</span>
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 8px 8px',
+              borderTop: '2px dashed #EFE6D7',
+            }}
+          >
+            <input
+              type="text"
+              aria-label="Write a comment"
+              placeholder="Say something…"
+              value={vals.draft}
+              onChange={vals.typing}
+              style={{
+                flex: '1',
+                minWidth: '0',
+                height: '36px',
+                boxSizing: 'border-box',
+                border: '2.5px solid #2A2522',
+                borderRadius: '999px',
+                background: '#F5EFE5',
+                padding: '0 12px',
+                fontFamily: "'Nunito', sans-serif",
+                fontSize: '14px',
+                fontWeight: '700',
+                color: '#2A2522',
+                outline: 'none',
+              }}
+            />
+
+            <button
+              type="button"
+              aria-label="Send"
+              onClick={vals.send}
+              style={{
+                all: 'unset',
+                width: '36px',
+                height: '36px',
+                flex: 'none',
+                boxSizing: 'border-box',
+                border: '2.5px solid #2A2522',
+                borderRadius: '50%',
+                background: vals.accent,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#2A2522"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 12 H20 M14 6 L20 12 L14 18" />
+              </svg>
+            </button>
+          </div>
+        </section>
+
+        {/* Control */}
+
+        {vals.isPlayer ? (
+          <section
+            aria-live="polite"
+            style={{
+              margin: '0 20px 24px',
+              flex: 'none',
+              minHeight: '64px',
+              boxSizing: 'border-box',
+              border: '3px solid #2A2522',
+              borderRadius: '20px',
+              background: '#FFFDF8',
+              boxShadow: '4px 5px 0 #2A2522',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '8px 8px 8px 12px',
+            }}
+          >
+            {vals.byYou ? (
+              <span
+                role="img"
+                aria-label="You moved"
+                style={{
+                  width: '26px',
+                  height: '26px',
+                  flex: 'none',
+                  boxSizing: 'border-box',
+                  border: '2px solid #2A2522',
+                  borderRadius: '50%',
+                  background: '#CFE3F4',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 20 l3 -1 l12 -12 a2 2 0 0 0 -3 -3 l-12 12 z"
+                    fill="#FFFDF8"
+                    stroke="#2A2522"
+                    strokeWidth="2.6"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            ) : null}
+
+            {vals.byHer ? (
+              <span
+                role="img"
+                aria-label="She moved"
+                style={{
+                  width: '26px',
+                  height: '26px',
+                  flex: 'none',
+                  boxSizing: 'border-box',
+                  border: '2px dashed #2A2522',
+                  borderRadius: '50%',
+                  background: '#EFE4CF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 40 40" aria-hidden="true">
+                  <circle cx="11" cy="9" r="5.5" fill="#2A2522" />
+                  <circle cx="29" cy="9" r="5.5" fill="#2A2522" />
+                  <circle cx="20" cy="22" r="12" fill="#7A4A2E" stroke="#2A2522" strokeWidth="2.5" />
+                </svg>
+              </span>
+            ) : null}
+
+            {vals.waiting ? (
+              <span
+                role="img"
+                aria-label="Waiting for you"
+                style={{
+                  width: '26px',
+                  height: '26px',
+                  flex: 'none',
+                  boxSizing: 'border-box',
+                  border: '2px solid #2A2522',
+                  borderRadius: '50%',
+                  background: '#F7D6D6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M6 3 h12 M6 21 h12 M7 3 c0 6 10 6 10 9 c0 3 -10 3 -10 9 M17 3 c0 6 -10 6 -10 9 c0 3 10 3 10 9"
+                    fill="none"
+                    stroke="#2A2522"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+            ) : null}
+
+            <span
+              style={{
+                flex: '1',
+                minWidth: '0',
+                fontFamily: "'Fredoka', sans-serif",
+                fontSize: '15.5px',
+                fontWeight: '600',
+                lineHeight: '1.2',
+              }}
+            >
+              {vals.status}
+            </span>
+
+            {vals.showExtra ? (
+              <button
+                type="button"
+                onClick={vals.extraGo}
+                style={{
+                  all: 'unset',
+                  height: '44px',
+                  padding: '0 14px',
+                  boxSizing: 'border-box',
+                  borderRadius: '999px',
+                  background: '#FFFDF8',
+                  border: '3px solid #2A2522',
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                {vals.extraLabel}
+              </button>
+            ) : null}
+
+            {vals.waiting ? (
+              <button
+                type="button"
+                onClick={vals.handOff}
+                style={{
+                  all: 'unset',
+                  height: '44px',
+                  padding: '0 14px',
+                  boxSizing: 'border-box',
+                  borderRadius: '999px',
+                  background: '#FFFDF8',
+                  border: '3px dashed #2A2522',
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                }}
+              >
+                Hand Off
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
+        {vals.isWatcher ? (
+          <section
+            style={{
+              margin: '0 20px 24px',
+              height: '60px',
+              flex: 'none',
+              boxSizing: 'border-box',
+              border: '3px solid #2A2522',
+              borderRadius: '20px',
+              background: '#2F3E5C',
+              color: '#FFFDF8',
+              boxShadow: '4px 5px 0 #2A2522',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '0 8px 0 14px',
+            }}
+          >
+            <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M2 12 C5 6 9 4 12 4 C15 4 19 6 22 12 C19 18 15 20 12 20 C9 20 5 18 2 12 Z"
+                fill="#FFFDF8"
+                stroke="#2A2522"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+              <circle cx="12" cy="12" r="4" fill="#E8B53A" stroke="#2A2522" strokeWidth="2" />
+            </svg>
+
+            <span
+              style={{ flex: '1', fontFamily: "'Fredoka', sans-serif", fontSize: '16px', fontWeight: '600' }}
+            >
+              {vals.watchStatus}
+            </span>
+
+            <ScreenLink
+              href="Play.dc.html"
+              style={{
+                height: '40px',
+                boxSizing: 'border-box',
+                border: '2.5px solid #2A2522',
+                borderRadius: '999px',
+                background: '#FFFDF8',
+                color: '#2A2522',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 14px',
+                fontFamily: "'Fredoka', sans-serif",
+                fontSize: '15px',
+                fontWeight: '600',
+                textDecoration: 'none',
+              }}
+            >
+              Leave
+            </ScreenLink>
+          </section>
+        ) : null}
+      </div>
+    );
+  }
+}
