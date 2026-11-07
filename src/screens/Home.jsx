@@ -120,7 +120,7 @@ export default class Home extends Screen {
           (k === i ? '#F2CE6E' : 'rgba(255,253,248,0.35)') +
           ';',
       })),
-      prev: () => this.setState({ i: (i + headlines.length - 1) % headlines.length }),
+      prevHeadline: () => this.setState({ i: (i + headlines.length - 1) % headlines.length }),
       next: () => this.setState({ i: (i + 1) % headlines.length }),
       a,
       allClear: onClear,
@@ -533,7 +533,7 @@ export default class Home extends Screen {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <button
                   type="button"
-                  onClick={vals.prev}
+                  onClick={vals.prevHeadline}
                   aria-label="Previous headline"
                   style={{
                     all: 'unset',
